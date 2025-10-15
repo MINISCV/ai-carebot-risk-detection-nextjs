@@ -1,329 +1,510 @@
+// src/app/main/analysis/page.tsx
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo, ChangeEvent, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   useReactTable,
   getCoreRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
   flexRender,
   ColumnDef,
+  PaginationState,
 } from "@tanstack/react-table";
-import Link from "next/link";
+import api from "@/lib/api";
+import { PagedResponse } from "@/types";
 import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
 
-interface UserData {
-  id: number;
+interface AnalysisResultView {
+  overall_result_id: number;
+  label: "POSITIVE" | "DANGER" | "CRITICAL" | "EMERGENCY";
+  summary: string;
+  timestamp: string;
+  doll_id: string;
+  senior_id: number;
   name: string;
   age: number;
-  gender: string;
-  region: string;
-  riskLevel: string;
-  utterance: number;
-  score: number;
-  summary: string;
-  registeredAt: string; // 'YYYY-MM-DD HH:mm:ss'
+  sex: "MALE" | "FEMALE";
+  gu: string;
+  dong: string;
 }
 
+interface Dong {
+  dong_code: string;
+  dong_name: string;
+}
+interface Gu {
+  gu_code: string;
+  gu_name: string;
+  dong_list: Dong[];
+}
+
+const labelMap: Record<string, string> = {
+  EMERGENCY: "긴급",
+  CRITICAL: "위험",
+  DANGER: "주의",
+  POSITIVE: "안전",
+};
+const labelApiKeys = Object.keys(labelMap);
+
 export default function AnalysisPage() {
-  const [filters, setFilters] = useState({
-    status: "",
-    dateFrom: "",
-    dateTo: "",
-    timeFrom: "",
-    timeTo: "",
+  const router = useRouter();
+
+  const [data, setData] = useState<AnalysisResultView[]>([]);
+  const [pageCount, setPageCount] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const [searchParams, setSearchParams] = useState({
+    name: "",
+    senior_id: "",
+    gu: "",
+    dong: "",
+    label: "",
+    doll_id: "",
+    age_group: "",
+    sex: "",
+    start_date: "",
+    end_date: "",
   });
 
-  // 데이터 50개 생성 (시간까지 포함)
-  const [data] = useState<UserData[]>(
-    Array.from({ length: 50 }).map((_, i) => {
-      const date = new Date(
-        2025,
-        0,
-        (i % 30) + 1,
-        Math.floor(Math.random() * 24),
-        Math.floor(Math.random() * 60),
-        Math.floor(Math.random() * 60)
+  const [administrativeDistricts, setAdministrativeDistricts] = useState<Gu[]>([]);
+  const [availableDongs, setAvailableDongs] = useState<Dong[]>([]);
+
+  const [{ pageIndex, pageSize }, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+  const pagination = useMemo(() => ({ pageIndex, pageSize }), [pageIndex, pageSize]);
+
+  useEffect(() => {
+    const fetchAdminDistricts = async () => {
+      try {
+        const res = await api.get<Gu[]>("/administrative-districts");
+        setAdministrativeDistricts(res.data);
+      } catch (error) {
+        console.error("Failed to fetch administrative districts:", error);
+      }
+    };
+    fetchAdminDistricts();
+  }, []);
+
+  useEffect(() => {
+    if (searchParams.gu) {
+      const selectedGu = administrativeDistricts.find((g) => g.gu_code === searchParams.gu);
+      setAvailableDongs(selectedGu?.dong_list || []);
+    } else {
+      setAvailableDongs([]);
+    }
+    setSearchParams((prev) => ({ ...prev, dong: "" }));
+  }, [searchParams.gu, administrativeDistricts]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const queryParams = new URLSearchParams({
+        page: pageIndex.toString(),
+        size: pageSize.toString(),
+        sort: "timestamp,desc",
+      });
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (value) queryParams.append(key, value);
+      });
+      const res = await api.get<PagedResponse<AnalysisResultView>>(
+        `/analyze?${queryParams.toString()}`
       );
-      const formattedDate = date.toISOString().slice(0, 19).replace("T", " "); // 'YYYY-MM-DD HH:mm:ss'
-      return {
-        id: i + 1,
-        name: `이용자 ${i + 1}`,
-        age: 65 + (i % 20),
-        gender: i % 2 === 0 ? "남" : "여",
-        region: ["대덕구", "동구", "서구", "유성구", "중구"][i % 5],
-        riskLevel: ["긴급", "위험", "주의", "안전"][i % 4],
-        utterance: Math.floor(Math.random() * 100),
-        score: Math.floor(Math.random() * 100),
-        summary: `요약 내용 예시 ${i + 1}. `.repeat(10).slice(0, 200),
-        registeredAt: formattedDate,
-      };
-    })
-  );
+      setData(res.data.content);
+      setPageCount(res.data.total_pages);
+      setTotalElements(res.data.total_elements);
+    } catch (error) {
+      console.error("Failed to fetch analysis data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [pageIndex, pageSize, searchParams]);
 
-  const filteredData = useMemo(() => {
-    return data.filter((d) => {
-      const regDate = new Date(d.registeredAt);
-      const fromDate = filters.dateFrom ? new Date(filters.dateFrom) : null;
-      const toDate = filters.dateTo ? new Date(filters.dateTo) : null;
-      const fromTime = filters.timeFrom ? filters.timeFrom.split(":") : null;
-      const toTime = filters.timeTo ? filters.timeTo.split(":") : null;
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      fetchData();
+    }, 500);
+    return () => clearTimeout(debounceTimer);
+  }, [fetchData]);
 
-      if (filters.status && d.riskLevel !== filters.status) return false;
-      if (fromDate && regDate < fromDate) return false;
-      if (toDate && regDate > toDate) return false;
-      if (fromTime && (regDate.getHours() < +fromTime[0] || (regDate.getHours() === +fromTime[0] && regDate.getMinutes() < +fromTime[1]))) return false;
-      if (toTime && (regDate.getHours() > +toTime[0] || (regDate.getHours() === +toTime[0] && regDate.getMinutes() > +toTime[1]))) return false;
-
-      return true;
-    });
-  }, [data, filters]);
-
-  const columns = useMemo<ColumnDef<UserData>[]>(
-    () => [
-      { accessorKey: "id", header: "순번" },
-      {
-        accessorKey: "name",
-        header: "이름",
-        cell: ({ row }) => (
-          <Link
-            href={`/main/users/view/${row.original.id}`}
-            className="text-blue-600 hover:underline"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      { accessorKey: "age", header: "나이" },
-      { accessorKey: "gender", header: "성별" },
-      { accessorKey: "region", header: "거주지역" },
-      { accessorKey: "riskLevel", header: "라벨" },
-      { accessorKey: "utterance", header: "발화건수" },
-      { accessorKey: "score", header: "점수" },
-      {
-        accessorKey: "summary",
-        header: "요약",
-        cell: ({ getValue }) => {
-          const text = getValue() as string;
-          return text.length > 100 ? text.slice(0, 100) + "..." : text;
-        },
-      },
-      {
-        accessorKey: "registeredAt",
-        header: "분석요청시간",
-        cell: ({ getValue }) => {
-          const full = getValue() as string;
-          const [date, time] = full.split(" ");
-          return (
-            <div>
-              <div>{date}</div>
-              <div>{time}</div>
-            </div>
-          );
-        },
-      },
-    ],
-    []
-  );
+  // ✅ 요약 클릭 시 상세 페이지 이동하도록 수정
+  const columns = useMemo<ColumnDef<AnalysisResultView>[]>(() => [
+    {
+      id: "index",
+      header: () => <div className="text-center">순번</div>,
+      cell: (info) => info.row.index + 1,
+    },
+    {
+      accessorKey: "doll_id",
+      header: () => <div className="text-center">인형ID</div>,
+    },
+    {
+      accessorKey: "senior_id",
+      header: () => <div className="text-center">이용자 번호</div>,
+    },
+    { accessorKey: "name", header: () => <div className="text-center">이름</div> },
+    { accessorKey: "age", header: () => <div className="text-center">나이</div> },
+    {
+      accessorKey: "sex",
+      header: () => <div className="text-center">성별</div>,
+      cell: (info) => (info.getValue() === "MALE" ? "남" : "여"),
+    },
+    { accessorKey: "gu", header: () => <div className="text-center">자치구</div> },
+    { accessorKey: "dong", header: () => <div className="text-center">법정동</div> },
+    {
+      accessorKey: "label",
+      header: () => <div className="text-center">분석 결과</div>,
+      cell: (info) => labelMap[info.getValue() as string] || info.getValue(),
+    },
+    {
+      accessorKey: "summary",
+      header: "요약",
+      // ✅ 요약 클릭 시 상세 페이지 이동
+      cell: ({ row }) => (
+        <button
+          onClick={() =>
+            router.push(`/main/analysis/${row.original.overall_result_id}`)
+          }
+          className="text-blue-600 hover:underline text-left"
+        >
+          {row.original.summary}
+        </button>
+      ),
+    },
+    {
+      accessorKey: "timestamp",
+      header: "분석일시",
+      cell: (info) =>
+        new Date(info.getValue() as string).toLocaleString("ko-KR"),
+    },
+  ], [router]);
 
   const table = useReactTable({
-    data: filteredData,
+    data,
     columns,
+    pageCount,
+    state: { pagination },
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 10 } },
+    manualPagination: true,
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFilters({ ...filters, [e.target.name]: e.target.value });
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    table.setPageIndex(0);
+    setSearchParams((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSearch = () => {
-    console.log("검색 조건:", filters);
-  };
+  const handleSearch = () => fetchData();
 
-  const handleDownloadExcel = () => {
-    const exportData = table.getRowModel().rows.map((row) => {
-      const rowData: Record<string, any> = {};
-      row.getVisibleCells().forEach((cell) => {
-        rowData[cell.column.columnDef.header as string] = cell.getValue();
-      });
-      return rowData;
+  const handleReset = () => {
+    setSearchParams({
+      name: "",
+      senior_id: "",
+      gu: "",
+      dong: "",
+      label: "",
+      doll_id: "",
+      age_group: "",
+      sex: "",
+      start_date: "",
+      end_date: "",
     });
-
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "분석결과");
-    const excelBuffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
-    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-    saveAs(blob, "분석결과.xlsx");
+    table.setPageIndex(0);
   };
 
-  const PAGE_GROUP_SIZE = 5;
-  const currentPageIndex = table.getState().pagination.pageIndex;
-  const totalPages = table.getPageCount();
-  const groupStart = Math.floor(currentPageIndex / PAGE_GROUP_SIZE) * PAGE_GROUP_SIZE + 1;
-  const groupEnd = Math.min(groupStart + PAGE_GROUP_SIZE - 1, totalPages);
+  const handleExcelDownload = async () => {
+    setIsDownloading(true);
+    try {
+      const queryParams = new URLSearchParams();
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (value) queryParams.append(key, value);
+      });
+      queryParams.append("size", "10000");
+      queryParams.append("sort", "timestamp,desc");
+
+      const res = await api.get<PagedResponse<AnalysisResultView>>(
+        `/analyze?${queryParams.toString()}`
+      );
+      const allData = res.data.content;
+      if (allData.length === 0) {
+        console.warn("No data available to download.");
+        return;
+      }
+
+      const excelData = allData.map((item, index) => ({
+        순번: index + 1,
+        "인형ID": item.doll_id,
+        "이용자 번호": item.senior_id,
+        이름: item.name,
+        나이: item.age,
+        성별: item.sex === "MALE" ? "남" : "여",
+        자치구: item.gu,
+        법정동: item.dong,
+        "분석 결과": labelMap[item.label] || item.label,
+        요약: item.summary,
+        분석일시: new Date(item.timestamp).toLocaleString("ko-KR"),
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+      worksheet["!cols"] = [
+        { wch: 5 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 6 },
+        { wch: 6 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 50 },
+        { wch: 20 },
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "데이터 분석 목록");
+      XLSX.writeFile(workbook, `데이터_분석_목록_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+      console.error("Failed to download Excel file:", error);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const renderPageNumbers = () => {
+    const totalPages = table.getPageCount();
+    const currentPage = pageIndex + 1;
+    const pageNumbers = [];
+    const maxPagesToShow = 5;
+
+    if (totalPages <= maxPagesToShow) {
+      for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
+    } else {
+      let startPage = Math.max(1, currentPage - 2);
+      let endPage = Math.min(totalPages, currentPage + 2);
+      if (currentPage <= 3) {
+        startPage = 1;
+        endPage = maxPagesToShow;
+      } else if (currentPage >= totalPages - 2) {
+        startPage = totalPages - maxPagesToShow + 1;
+        endPage = totalPages;
+      }
+      for (let i = startPage; i <= endPage; i++) pageNumbers.push(i);
+    }
+
+    return pageNumbers.map((number) => (
+      <button
+        key={number}
+        onClick={() => table.setPageIndex(number - 1)}
+        className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${currentPage === number
+            ? "bg-blue-600 text-white"
+            : "bg-white text-gray-700 hover:bg-gray-100"
+          }`}
+      >
+        {number}
+      </button>
+    ));
+  };
 
   return (
-    <div className="text-black space-y-1 text-center">
-      {/* 검색 영역 */}
-      <div className="p-1 px-4 bg-white rounded-lg shadow">
-        <h2 className="font-bold text-xl mt-3">전체 분석결과</h2>
+    <div className="p-4 space-y-4 text-black">
+      {/* ✅ 제목 가운데 정렬 + 엑셀 다운로드 버튼 오른쪽 */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-bold text-center flex-1">전체 분석결과</h2>
         <button
-          onClick={handleDownloadExcel}
-          className="bg-green-400 text-white px-2 py-1 rounded-lg hover:bg-green-600 flex ml-auto text-sm leading-tight"
+          onClick={handleExcelDownload}
+          disabled={isDownloading}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-bold text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          엑셀 다운로드
+          {isDownloading ? "다운로드 중..." : "엑셀 다운로드"}
         </button>
+      </div>
 
-        <div className="grid grid-cols-10 gap-3 mt-2 mr-5 p-3">
-          <label>현재상태(라벨)</label>
-          <select
-            name="status"
-            value={filters.status}
-            onChange={handleChange}
-            className="border rounded px-2 py-1"
-          >
-            <option value="">선택</option>
-            <option value="긴급">긴급</option>
-            <option value="위험">위험</option>
-            <option value="주의">주의</option>
-            <option value="안전">안전</option>
-          </select>
-
-          <label>날짜</label>
-          <input
-            type="date"
-            name="dateFrom"
-            value={filters.dateFrom}
-            onChange={handleChange}
-            className="border rounded px-2 py-1"
-          />
-          <span>~</span>
-          <input
-            type="date"
-            name="dateTo"
-            value={filters.dateTo}
-            onChange={handleChange}
-            className="border rounded px-2 py-1"
-          />
-
-          <label>시간</label>
-          <input
-            type="time"
-            name="timeFrom"
-            value={filters.timeFrom}
-            onChange={handleChange}
-            className="border rounded px-2 py-1"
-          />
-          <span>~</span>
-          <input
-            type="time"
-            name="timeTo"
-            value={filters.timeTo}
-            onChange={handleChange}
-            className="border rounded px-2 py-1"
-          />
-
-          <div className="col-span-10 mt-2 flex justify-center">
-            <button
-              onClick={handleSearch}
-              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-            >
-              검색
-            </button>
+      {/* 검색 영역 */}
+      <div className="bg-white p-4 rounded-lg shadow-md space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-x-6 gap-y-4 items-center text-sm">
+          {/* 1행 */}
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">자치구</label>
+            <select name="gu" value={searchParams.gu} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 bg-white">
+              <option value="">전체</option>
+              {administrativeDistricts.map(g => (
+                <option key={g.gu_code} value={g.gu_code}>{g.gu_name}</option>
+              ))}
+            </select>
           </div>
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">법정동</label>
+            <select name="dong" value={searchParams.dong} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 bg-white" disabled={!searchParams.gu}>
+              <option value="">전체</option>
+              {availableDongs.map(d => (
+                <option key={d.dong_code} value={d.dong_code}>{d.dong_name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">분석 결과</label>
+            <select name="label" value={searchParams.label} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 bg-white">
+              <option value="">전체</option>
+              {labelApiKeys.map(key => (
+                <option key={key} value={key}>{labelMap[key]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">연령대</label>
+            <select name="age_group" value={searchParams.age_group} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 bg-white">
+              <option value="">전체</option>
+              <option value="60">60대</option>
+              <option value="70">70대</option>
+              <option value="80">80대</option>
+              <option value="90">90대</option>
+              <option value="100">100세 이상</option>
+            </select>
+          </div>
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">성별</label>
+            <select name="sex" value={searchParams.sex} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 bg-white">
+              <option value="">전체</option>
+              <option value="MALE">남성</option>
+              <option value="FEMALE">여성</option>
+            </select>
+          </div>
+
+          {/* 2행 */}
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">이름</label>
+            <input name="name" placeholder="이름" value={searchParams.name} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5" />
+          </div>
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">인형ID</label>
+            <input name="doll_id" placeholder="인형ID" value={searchParams.doll_id} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5" />
+          </div>
+          <div className="flex items-center">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">이용자 번호</label>
+            <input name="senior_id" placeholder="번호" value={searchParams.senior_id} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5" />
+          </div>
+          <div className="flex items-center col-span-1 md:col-span-2">
+            <label className="w-24 shrink-0 font-semibold text-gray-700 text-right pr-3">분석일</label>
+            <input type="date" name="start_date" value={searchParams.start_date} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5" />
+            <span className="mx-2">~</span>
+            <input type="date" name="end_date" value={searchParams.end_date} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5" />
+          </div>
+        </div>
+
+        <div className="flex justify-center space-x-3 pt-2">
+          <button onClick={handleSearch} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-bold">
+            검색
+          </button>
+          <button onClick={handleReset} className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-300 font-bold">
+            초기화
+          </button>
         </div>
       </div>
 
       {/* 결과 테이블 */}
-      <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex justify-end items-center space-x-2 p-2">
-          <span>
-            페이지 <strong>{currentPageIndex + 1} / {totalPages}</strong>
-          </span>
+      <div className="bg-white p-4 rounded-lg shadow-md">
+        <div className="flex justify-between items-center mb-3">
+          <span className="font-semibold">검색 결과: 총 {totalElements} 건</span>
+          {/* ✨ [수정] 페이지당 행 수 드롭다운 위치 이동 및 레이블 제거 */}
           <select
             value={table.getState().pagination.pageSize}
-            onChange={e => table.setPageSize(Number(e.target.value))}
-            className="border rounded px-2 py-1"
+            onChange={e => {
+              table.setPageSize(Number(e.target.value))
+            }}
+            className="border rounded px-2 py-1 bg-white text-sm"
           >
-            {[10, 20, 30, 50].map(size => (
-              <option key={size} value={size}>{size}개씩 보기</option>
+            {[10, 20, 30, 40, 50].map(size => (
+              <option key={size} value={size}>
+                {size}개씩 보기
+              </option>
             ))}
           </select>
         </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-gray-600">
+            <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+              {table.getHeaderGroups().map(headerGroup => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map(header => (
+                    <th key={header.id} className="px-4 py-3">
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={columns.length} className="text-center py-10">데이터를 불러오는 중입니다...</td></tr>
+              ) : table.getRowModel().rows.length === 0 ? (
+                <tr><td colSpan={columns.length} className="text-center py-10">검색 결과가 없습니다.</td></tr>
+              ) : (
+                table.getRowModel().rows.map(row => (
+                  <tr key={row.id} className="bg-white border-b hover:bg-gray-50">
+                    {row.getVisibleCells().map(cell => (
+                      <td
+                        key={cell.id}
+                        className={`px-4 py-3 align-middle ${cell.column.id !== 'summary' && cell.column.id !== 'timestamp' ? 'text-center' : 'text-left'}`}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-        <table className="w-full border-collapse border border-gray-200 text-sm text-black text-center">
-          <thead className="bg-gray-100">
-            {table.getHeaderGroups().map(headerGroup => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map(header => (
-                  <th
-                    key={header.id}
-                    className="border border-gray-200 px-1 py-2 text-center cursor-pointer"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                    {{
-                      asc: " 🔼",
-                      desc: " 🔽",
-                    }[header.column.getIsSorted() as string] ?? null}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.length ? table.getRowModel().rows.map(row => (
-              <tr key={row.id} className="hover:bg-gray-50">
-                {row.getVisibleCells().map(cell => (
-                  <td key={cell.id} className="border border-gray-200 px-1 py-2 text-center items-center justify-center">
-                    {cell.column.id === "summary"
-                      ? (cell.getValue() as string).slice(0, 100)
-                      : flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            )) : (
-              <tr>
-                <td colSpan={columns.length} className="text-center text-gray-500 py-6">
-                  검색 결과가 없습니다.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {/* ✨ [수정] 페이지네이션 UI 변경 (위 스타일로 통일) */}
+        <div className="flex items-center justify-center gap-2 mt-4 text-sm">
+          {/* 처음으로 이동 */}
+          <button
+            onClick={() => table.setPageIndex(0)}
+            disabled={!table.getCanPreviousPage()}
+            className={`px-2.5 py-1 disabled:opacity-50 hover:bg-gray-100 ${table.getCanPreviousPage() ? "text-black" : "text-gray-400"
+              }`}
+          >
+            {"<<"}
+          </button>
 
-        <div className="flex justify-center items-center mt-4 space-x-1 text-sm">
+          {/* 이전 페이지 */}
           <button
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
-            className="px-3 py-1 border rounded disabled:opacity-50"
+            className={`px-2.5 py-1 disabled:opacity-50 hover:bg-gray-100 ${table.getCanPreviousPage() ? "text-black" : "text-gray-400"
+              }`}
           >
-            이전
+            {"<"}
           </button>
 
-          <div className="flex space-x-1">
-            {Array.from({ length: groupEnd - groupStart + 1 }, (_, i) => groupStart + i).map(page => (
-              <span
-                key={page}
-                onClick={() => table.setPageIndex(page - 1)}
-                className={`px-2 cursor-pointer ${currentPageIndex === page - 1 ? "text-blue-600 font-bold underline" : ""}`}
-              >
-                {page}
-              </span>
-            ))}
+          {/* 페이지 번호 */}
+          <div className="flex gap-2 min-w-[200px] justify-between">
+            {renderPageNumbers()}
           </div>
 
+          {/* 다음 페이지 */}
           <button
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
-            className="px-3 py-1 border rounded disabled:opacity-50"
+            className={`px-2.5 py-1 disabled:opacity-50 hover:bg-gray-100 ${table.getCanNextPage() ? "text-black" : "text-gray-400"
+              }`}
           >
-            다음
+            {">"}
+          </button>
+
+          {/* 마지막 페이지 */}
+          <button
+            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+            disabled={!table.getCanNextPage()}
+            className={`px-2.5 py-1 disabled:opacity-50 hover:bg-gray-100 ${table.getCanNextPage() ? "text-black" : "text-gray-400"
+              }`}
+          >
+            {">>"}
           </button>
         </div>
       </div>
