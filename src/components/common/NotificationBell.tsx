@@ -1,69 +1,86 @@
 'use client';
 
-import React from "react";
-import { useRouter } from "next/navigation";
-import { FaBell, FaTrashAlt, FaCheckDouble } from "react-icons/fa";
-import { useNotificationContext } from "@/contexts/NotificationContext";
-import type { Notification } from "@/types/notification";
+import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { FaBell, FaTrashAlt, FaCheckDouble } from 'react-icons/fa';
+import { useNotificationContext } from '@/contexts/NotificationContext';
+import type { Notification } from '@/types';
 
-const NotificationBell: React.FC = () => {
+export default function NotificationBell() {
   const router = useRouter();
-  const {
-    notifications,
-    unreadCount,
-    markAsRead,
-    markAllAsRead,
-    clearNotifications,
-    isBellOpen,
-    setIsBellOpen
-  } = useNotificationContext();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, clearNotifications } = useNotificationContext();
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleToggle = () => setIsBellOpen(!isBellOpen);
+  const toggleOpen = () => setIsOpen(prev => !prev);
 
-  const handleClick = (notification: Notification): void => {
-    if (!notification.is_read) markAsRead(notification.notification_id);
+  const handleClick = async (notification: Notification) => {
+    if (!notification.is_read) await markAsRead(notification.notification_id);
 
-    switch (notification.type) {
-      case "ANALYSIS_COMPLETE":
-        router.push(`/main/analysis/${notification.resource_id}`);
-        break;
-      case "SENIOR_STATE_CHANGED":
-        console.log(`Senior state changed for senior ID: ${notification.resource_id}. Navigation not implemented yet.`);
-        break;
-      default:
-        console.log(`Navigation 미정: ${notification.type}`);
-        break;
+    // ✅ 서버에서 link가 내려오면 해당 링크로 이동
+    if (notification.link) {
+      router.push(notification.link);
+    } else {
+      switch (notification.type) {
+        case 'ANALYSIS_COMPLETE':
+          router.push(`/analysis/${notification.resource_id}`);
+          break;
+        case 'SENIOR_STATE_CHANGED':
+          router.push(`/users/view/${notification.resource_id}`);
+          break;
+        default:
+          console.log(`Navigation not defined for type: ${notification.type}`);
+          break;
+      }
     }
-
-    setIsBellOpen(false);
+    setIsOpen(false);
   };
 
+  // 클릭 외부 시 알림창 닫기
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block" ref={containerRef}>
       <button
-        onClick={handleToggle}
+        onClick={toggleOpen}
         className="relative bg-transparent border-none cursor-pointer p-2 text-gray-800 hover:text-blue-600 transition-colors"
       >
         <FaBell size={24} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full">
-            {unreadCount > 9 ? "9+" : unreadCount}
+          <span
+            className="absolute -top-1 -right-1 flex items-center justify-center min-w-5 h-5 px-1 text-xs font-bold text-white bg-red-500 rounded-full"
+          >
+            {unreadCount}
           </span>
         )}
       </button>
 
-      {isBellOpen && (
+      {isOpen && (
         <div className="absolute top-[calc(100%+10px)] right-0 w-[360px] bg-white border border-gray-200 rounded-xl shadow-lg z-50">
           <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
             <h4 className="text-sm font-semibold text-gray-700">알림</h4>
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
-                <button onClick={markAllAsRead} className="text-xs text-blue-600 hover:underline flex items-center gap-1 cursor-pointer">
+                <button
+                  onClick={markAllAsRead}
+                  className="text-xs text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                >
                   <FaCheckDouble size={12} /> 모두 읽음
                 </button>
               )}
               {notifications.length > 0 && (
-                <button onClick={clearNotifications} className="text-xs text-red-400 hover:underline flex items-center gap-1 cursor-pointer">
+                <button
+                  onClick={clearNotifications}
+                  className="text-xs text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
                   <FaTrashAlt size={12} /> 전체 삭제
                 </button>
               )}
@@ -72,34 +89,26 @@ const NotificationBell: React.FC = () => {
 
           {notifications.length > 0 ? (
             <ul className="max-h-80 overflow-y-auto">
-              {notifications.map((n: Notification) => (
+              {notifications.map(n => (
                 <li
                   key={n.notification_id}
                   onClick={() => handleClick(n)}
                   className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0 ${
-                    !n.is_read
-                      ? n.type === "ANALYSIS_COMPLETE"
-                        ? "bg-blue-50" // 연한 하늘색
-                        : "bg-gray-100" // 다른 읽지 않은 알림
-                      : "bg-white"
+                    !n.is_read ? 'bg-blue-50 font-semibold' : 'bg-white'
                   }`}
                 >
                   <p className="text-gray-800 text-sm">{n.message}</p>
                   <small className="text-gray-500 text-xs">
-                    {new Date(n.created_at).toLocaleString("ko-KR")}
+                    {new Date(n.created_at).toLocaleString('ko-KR')}
                   </small>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="px-4 py-6 text-sm text-gray-500 text-center">
-              새로운 알림이 없습니다.
-            </div>
+            <div className="px-4 py-6 text-sm text-gray-500 text-center">새로운 알림이 없습니다.</div>
           )}
         </div>
       )}
     </div>
   );
-};
-
-export default NotificationBell;
+}

@@ -1,48 +1,60 @@
-// src/contexts/KakaoMapContext.tsx
 "use client";
 
-import Script from 'next/script';
-import { ReactNode, useState } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
-const KAKAO_APP_KEY = process.env.NEXT_PUBLIC_KAKAO_APP_KEY;
-const KAKAO_SDK_URL = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}&libraries=services&autoload=false`;
+interface KakaoMapContextValue {
+  isKakaoLoaded: boolean;
+  isPostcodeLoaded: boolean;
+}
 
-export default function KakaoMapContext({ children }: { children: ReactNode }) {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const KakaoMapContext = createContext<KakaoMapContextValue>({
+  isKakaoLoaded: false,
+  isPostcodeLoaded: false,
+});
 
-  if (!KAKAO_APP_KEY) {
+export default function KakaoMapProvider({ children }: { children: ReactNode }) {
+  const [isKakaoLoaded, setIsKakaoLoaded] = useState(false);
+  const [isPostcodeLoaded, setIsPostcodeLoaded] = useState(false);
+
+  useEffect(() => {
+    // ✅ Kakao 지도 SDK 로드
+    if (!window.kakao?.maps) {
+      const kakaoScript = document.createElement("script");
+      kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_APP_KEY}&autoload=false&libraries=services`;
+      kakaoScript.async = true;
+      kakaoScript.onload = () => {
+        window.kakao.maps.load(() => setIsKakaoLoaded(true));
+      };
+      document.head.appendChild(kakaoScript);
+    } else {
+      setIsKakaoLoaded(true);
+    }
+
+    // ✅ Daum 주소 검색 스크립트 로드
+    if (!window.daum?.Postcode) {
+      const daumScript = document.createElement("script");
+      daumScript.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+      daumScript.async = true;
+      daumScript.onload = () => setIsPostcodeLoaded(true);
+      document.head.appendChild(daumScript);
+    } else {
+      setIsPostcodeLoaded(true);
+    }
+  }, []);
+
+  if (!isKakaoLoaded || !isPostcodeLoaded) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-red-100 text-red-700">
-        <div className="text-center">
-          <h2 className="text-xl font-bold">⚠️ 카카오 API 키가 설정되지 않았습니다.</h2>
-          <p className="mt-2">
-            프로젝트의 .env.local 파일에 <code>NEXT_PUBLIC_KAKAO_APP_KEY</code>를 설정해주세요.
-          </p>
-        </div>
+      <div className="w-full h-full flex items-center justify-center text-gray-500">
+        지도 및 주소 검색 로딩 중...
       </div>
     );
   }
 
   return (
-    <>
-      <Script
-        id="kakao-map-script"
-        src={KAKAO_SDK_URL}
-        strategy="afterInteractive"
-        onLoad={() => {
-          window.kakao.maps.load(() => {
-            console.log('✅ Kakao Map API가 성공적으로 로드되었습니다.');
-            setIsLoaded(true);
-          });
-        }}
-        onError={(e) => {
-          console.error('❌ Kakao 지도 스크립트 로드에 실패했습니다:', e);
-          setError('Kakao 지도 스크립트를 불러오는 데 실패했습니다. API 키와 도메인 등록을 확인해주세요.');
-        }}
-      />
-      {error && <div className="text-center text-red-500 p-4">{error}</div>}
-      {isLoaded ? children : <div className="flex h-screen items-center justify-center">🗺️ 지도를 로딩하고 있습니다...</div>}
-    </>
+    <KakaoMapContext.Provider value={{ isKakaoLoaded, isPostcodeLoaded }}>
+      {children}
+    </KakaoMapContext.Provider>
   );
 }
+
+export const useKakaoMap = () => useContext(KakaoMapContext);

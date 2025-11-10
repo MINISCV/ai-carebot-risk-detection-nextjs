@@ -23,24 +23,24 @@ export default function Sidebar() {
   };
 
   const menuItems: MenuItem[] = [
-    { label: "전체 현황", icon: "/img/status.png", href: "/main" },
-    { label: "이용자 관리", icon: "/img/users.png", href: "/main/users/view" },
-    { label: "인형 관리", icon: "/img/doll.png", href: "/main/dolls" },
-    { label: "전체 분석 결과", icon: "/img/analysis.png", href: "/main/analysis" },
-    { label: "설정", icon: "/img/setting.png", href: "/main/setting" },
+    { label: "전체 현황", icon: "/img/status.png", href: "/dashboard" },
+    { label: "이용자 관리", icon: "/img/users.png", href: "/users/view" },
+    { label: "인형 관리", icon: "/img/doll.png", href: "/dolls" },
+    { label: "전체 분석 결과", icon: "/img/analysis.png", href: "/analysis" },
+    { label: "설정", icon: "/img/setting.png", href: "/setting" },
   ];
 
   const renderMenu = (items: MenuItem[], isSubMenu = false): ReactNode => (
-    <ul className={`${isSubMenu ? "ml-4 mt-1 text-sm space-y-1" : "space-y-2 text-gray-700"}`}>
+    <ul className={`${isSubMenu ? "ml-4 mt-1 text-base space-y-1" : "space-y-2 text-gray-700"}`}>
       {items.map(item => {
-        const isActive = item.href && (pathname === item.href || (item.href !== "/main" && pathname.startsWith(item.href)));
+        const isActive = item.href && (pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href)));
         return (
           <li key={item.label}>
             {item.children ? (
               <div>
                 <button
                   onClick={() => toggleSubMenu(item.label)}
-                  className="flex items-center justify-between w-full px-2 py-2 font-medium text-gray-700 hover:text-orange-500 rounded-lg"
+                  className="flex items-center justify-between w-full px-2 py-2 font-semibold text-gray-700 hover:text-orange-500 rounded-lg"
                 >
                   <span className="flex items-center space-x-2">
                     {item.icon && <span>{item.icon}</span>}
@@ -55,7 +55,7 @@ export default function Sidebar() {
             ) : (
               <Link
                 href={item.href || "#"}
-                className={`flex items-center space-x-2 px-2 py-2 rounded-lg transition
+                className={`flex items-center space-x-2 px-2 py-2 rounded-lg transition font-medium
                 ${isActive ? "bg-orange-100 text-orange-600 font-semibold" : "hover:bg-orange-50 hover:text-orange-500"}`}
               >
                  {item.icon && (
@@ -81,10 +81,13 @@ export default function Sidebar() {
   );
 
   return (
-    <aside className="w-64 bg-white border-r flex flex-col shadow-sm justify-between">
+    <aside className="w-60 bg-white flex flex-col shadow-sm justify-between">
       {/* 상단 로고 + 메뉴 */}
       <div>
-        <div className="flex items-center border-b h-16 px-4">
+        <Link
+          href="/dashboard"
+          className="flex items-center border-b border-gray-200 h-16 px-4 transition-colors hover:bg-gray-50 cursor-pointer"
+        >
           <Image
             src="/img/grandparents.png"
             alt="조부모 이모지"
@@ -95,7 +98,7 @@ export default function Sidebar() {
           <span className="ml-2 font-bold text-lg text-black whitespace-nowrap">
             시니어 돌봄 관제시스템
           </span>
-        </div>
+        </Link>
         <nav className="flex-1 px-4 py-6">{renderMenu(menuItems)}</nav>
       </div>
 

@@ -113,8 +113,6 @@ export default function DetailedAnalysisPage() {
       const res = await api.get(`/analyze/${id}`);
       console.log(res.data)
       setData(res.data || null);
-      // router.push('/main');
-      // router.refresh();
     } catch (err) {
       console.error("상태 변경 API 호출 실패:", err);
       alert("상태 변경 중 오류가 발생했습니다.");
@@ -128,7 +126,7 @@ export default function DetailedAnalysisPage() {
     try {
       await api.delete(`/analyze/${id}`);
       alert("삭제되었습니다.");
-      router.push("/main/analysis");
+      router.push("/analysis");
     } catch (error) {
       console.error("삭제 실패:", error);
       alert("삭제 실패!");
@@ -172,7 +170,7 @@ export default function DetailedAnalysisPage() {
 
       // 대화 목록
       rows.push(["대화 목록"]);
-      rows.push(["순번", "내용", "결과", "긴급", "위험", "주의", "안전", "시간"]);
+      rows.push(["순번", "내용", "결과", "긴급", "위험", "주의", "안전", "일시"]);
       (data.dialogues || []).forEach((dlg, idx) => {
         rows.push([
           idx + 1,
@@ -229,15 +227,17 @@ export default function DetailedAnalysisPage() {
         </button>
       </div>
 
-      <div className="border rounded-lg p-4 bg-gray-50 flex flex-wrap gap-2 space-x-6">
-        <div className="font-bold w-full text-xl">이용자 정보</div>
+      <div className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm flex flex-wrap gap-2 space-x-6">
+        <div className="flex items-center gap-2 w-full mb-1">
+          <div className="w-1 h-5 bg-blue-600 rounded"></div>
+          <h3 className="font-bold text-xl pl-1">이용자 정보</h3></div>
         <span>· 이름 : {data.senior_name}</span>
         <span>· 질병 : {data.diseases || "-"}</span>
         <span>· 나이 : {data.age}세</span>
         <span>· 인형 ID : {data.doll_id}</span>
       </div>
 
-      <div className="border rounded-lg p-4 bg-white shadow-sm space-y-4">
+      <div className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm space-y-4">
         <div className="flex gap-x-3">
           <div className="flex items-center">
             <div
@@ -302,20 +302,24 @@ export default function DetailedAnalysisPage() {
         </div>
       </div>
 
-      <div className="border rounded-lg p-4 bg-white shadow-sm">
-        <div className="font-bold text-xl mb-2">대화 목록</div>
+      <div className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
+        <div className="flex items-center gap-2 w-full mb-1">
+          <div className="w-1 h-5 bg-blue-600 rounded"></div>
+          <h3 className="font-bold text-xl pl-1">대화 목록</h3></div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse border text-center">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border p-1.5 w-8">순번</th>
-                <th className="border p-1.5 w-1/2">내용</th>
-                <th className="border p-1.5 w-16">결과</th>
-                <th className="border p-1.5 w-16">긴급</th>
-                <th className="border p-1.5 w-16">위험</th>
-                <th className="border p-1.5 w-16">주의</th>
-                <th className="border p-1.5 w-16">안전</th>
-                <th className="border p-1.5 w-40">시간</th>
+          <table className="w-full text-sm text-center">
+            {/* thead: 위아래 테두리를 추가하고 텍스트 스타일을 변경합니다. */}
+            <thead className="border-b border-t border-gray-200">
+              <tr className="bg-gray-50">
+                {/* th: 좌우 테두리를 제거하고 패딩(여백)을 조정합니다. */}
+                <th className="px-3 py-2 font-medium text-gray-600">순번</th>
+                <th className="px-3 py-2 font-medium text-gray-600 w-1/2">내용</th>
+                <th className="px-3 py-2 font-medium text-gray-600">결과</th>
+                <th className="px-3 py-2 font-medium text-gray-600">긴급</th>
+                <th className="px-3 py-2 font-medium text-gray-600">위험</th>
+                <th className="px-3 py-2 font-medium text-gray-600">주의</th>
+                <th className="px-3 py-2 font-medium text-gray-600">안전</th>
+                <th className="px-3 py-2 font-medium text-gray-600">일시</th>
               </tr>
             </thead>
             <tbody>
@@ -329,27 +333,29 @@ export default function DetailedAnalysisPage() {
                   second: "2-digit",
                 });
                 return (
-                  <tr key={dlg.id} className="bg-white hover:bg-gray-50">
-                    <td className="border p-1.5 text-black">{i + 1}</td>
-                    <td className="border p-1.5 text-black text-left">{dlg.text}</td>
-                    <td className="border p-1.5 font-semibold">
+                  // tr: 각 행 아래에만 회색 테두리를 추가합니다.
+                  <tr key={dlg.id} className="border-b border-gray-200 hover:bg-gray-50">
+                    {/* td: 모든 테두리를 제거하고 패딩을 조정합니다. */}
+                    <td className="px-3 py-2.5 text-gray-700">{i + 1}</td>
+                    <td className="px-3 py-2.5 text-gray-700 text-left">{dlg.text}</td>
+                    <td className="px-3 py-2.5 font-semibold">
                       <span className={statusMap[dlg.label]?.textColor}>
                         {statusMap[dlg.label]?.text || dlg.label}
                       </span>
                     </td>
-                    <td className="border p-1.5 text-black">
+                    <td className="px-3 py-2.5text-gray-700">
                       {(dlg.confidence_scores.emergency * 100).toFixed(1)}%
                     </td>
-                    <td className="border p-1.5 text-black">
+                    <td className="px-3 py-2.5 text-gray-700">
                       {(dlg.confidence_scores.critical * 100).toFixed(1)}%
                     </td>
-                    <td className="border p-1.5 text-black">
+                    <td className="px-3 py-2.5 text-gray-700">
                       {(dlg.confidence_scores.danger * 100).toFixed(1)}%
                     </td>
-                    <td className="border p-1.5 text-black">
+                    <td className="px-3 py-2.5 text-gray-700">
                       {(dlg.confidence_scores.positive * 100).toFixed(1)}%
                     </td>
-                    <td className="border p-1.5 text-black text-xs">{time}</td>
+                    <td className="px-3 py-2.5 text-gray-700">{time}</td>
                   </tr>
                 );
               })}
@@ -358,8 +364,11 @@ export default function DetailedAnalysisPage() {
         </div>
       </div>
 
-      {data?.is_editable && <div className="border rounded-lg p-4 bg-white shadow-sm">
-        <h3 className="text-xl font-bold mb-4">조치 완료 결과</h3>
+      {data?.is_editable && <div className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-1 h-5 bg-blue-600 rounded"></div>
+          <h3 className="text-xl font-bold">조치 완료 결과</h3>
+        </div>
         <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-md">
           <p className="font-semibold text-gray-800">· 이용자 상태 변경 :</p>
           <div className="flex gap-4">

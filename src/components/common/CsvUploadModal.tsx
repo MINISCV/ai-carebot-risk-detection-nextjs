@@ -1,11 +1,10 @@
-// src/components/common/CsvUploadModal.tsx
 "use client";
 
 import { useState, ChangeEvent, DragEvent } from "react";
 import api from "@/lib/api";
 import { AxiosError } from "axios";
 import { useRouter } from "next/navigation";
-// import { addNotification } from "@/lib/notification";  // 알림 추가 유틸 임포트
+import Image from "next/image";
 
 interface CsvUploadModalProps {
   onClose: () => void;
@@ -67,15 +66,8 @@ export default function CsvUploadModal({ onClose }: CsvUploadModalProps) {
 
       const analysisId = res.data?.id;
       if (analysisId) {
-        // addNotification({
-        //   id: Date.now(),
-        //   type: "csv_upload",
-        //   message: `CSV 분석이 완료되었습니다. 분석결과 보기 (ID: ${analysisId})`,
-        //   link: `/main/analysis/${analysisId}`,
-        //   isPersistent: false,
-        // });
         onClose();
-        router.push(`/main/analysis/${analysisId}`);
+        router.push(`/analysis/${analysisId}`);
       } else {
         setError("분석 요청은 성공했으나, 결과 ID를 가져오지 못했습니다.");
       }
@@ -117,7 +109,8 @@ export default function CsvUploadModal({ onClose }: CsvUploadModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
+      {/* 모달 박스 */}
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg relative">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-gray-900">
             대화 파일 분석 요청 (CSV)
@@ -126,6 +119,7 @@ export default function CsvUploadModal({ onClose }: CsvUploadModalProps) {
             onClick={onClose}
             className="text-gray-900 hover:text-black text-2xl font-bold"
             aria-label="닫기"
+            disabled={isUploading}
           >
             &times;
           </button>
@@ -144,6 +138,7 @@ export default function CsvUploadModal({ onClose }: CsvUploadModalProps) {
             accept=".csv"
             onChange={handleFileChange}
             className="hidden"
+            disabled={isUploading}
           />
           <label htmlFor="csv-upload" className="cursor-pointer">
             {!file ? (
@@ -160,6 +155,7 @@ export default function CsvUploadModal({ onClose }: CsvUploadModalProps) {
                   type="button"
                   onClick={handleRemoveFile}
                   className="mt-2 text-sm text-red-600 hover:underline"
+                  disabled={isUploading}
                 >
                   파일 제거
                 </button>
@@ -177,27 +173,53 @@ export default function CsvUploadModal({ onClose }: CsvUploadModalProps) {
             type="button"
             onClick={onClose}
             disabled={isUploading}
-            className={`px-4 py-2 rounded-lg text-base cursor-pointer ${
-              isUploading
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                : "bg-gray-300 text-black hover:bg-gray-400"
-            }`}
+            className={`px-4 py-2 rounded-lg text-base ${isUploading
+              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              : "bg-gray-300 text-black hover:bg-gray-400"
+              }`}
           >
             취소
           </button>
+
           <button
             type="button"
             onClick={handleSubmit}
             disabled={isUploading || !file}
-            className={`px-4 py-2 rounded-lg text-base cursor-pointer ${
-              isUploading
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                : "bg-blue-500 text-white hover:bg-blue-600"
-            }`}
+            className={`px-4 py-2 rounded-lg text-base flex items-center justify-center gap-2 ${isUploading
+              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
           >
-            분석 요청
+            {isUploading ? (
+              <>
+                <Image
+                  src="/loading.gif"
+                  alt="loading"
+                  width={24}
+                  height={24}
+                  className="inline-block"
+                />
+                <span>분석 중...</span>
+              </>
+            ) : (
+              "분석 요청"
+            )}
           </button>
         </div>
+
+        {isUploading && (
+          <div className="absolute inset-0 bg-white bg-opacity-80 rounded-xl flex flex-col items-center justify-center z-[9999]">
+            <Image
+              src="/loading.gif"
+              alt="분석 중..."
+              width={64}
+              height={64}
+              className="mb-3"
+              unoptimized
+            />
+            <p className="text-gray-700 font-semibold">분석 중입니다...</p>
+          </div>
+        )}
       </div>
     </div>
   );
